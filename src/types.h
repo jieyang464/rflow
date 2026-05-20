@@ -24,21 +24,21 @@ using T4 = Eigen::Tensor<double, 4>;  // 4D tensor for ERI
 using T5 = Eigen::Tensor<double, 5>;
 using T6 = Eigen::Tensor<double, 6>;
 
-#if SCFCXX_ENABLE_LIBINT2_PROVIDER
-
-struct AtomWithBasis {
-    libint2::Atom atom;
-    std::vector<libint2::Shell> shells;
+struct Atom {
+    std::string symbol;
+    int atomic_number{0};
+    double x{0.0};
+    double y{0.0};
+    double z{0.0};
 };
 
-// Dumb data container for the molecule
+struct AtomWithBasis {
+    Atom atom;
+    std::string basis_set{"STO-3G"};
+};
+
 struct Molecule {
     std::vector<AtomWithBasis> atoms;
 
-    // Convenience helper to add an atom + its basis shells
-    void push_back(const libint2::Atom& atom, std::vector<libint2::Shell> shells) {
-        atoms.push_back(AtomWithBasis{atom, std::move(shells)});
-    }
 };
 
-#endif
