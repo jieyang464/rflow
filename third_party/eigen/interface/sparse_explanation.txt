@@ -1,0 +1,42 @@
+# How Eigen's SparseMatrix Works Under the Hood
+
+## 1. The CSC/CSR Storage Format
+Eigen does *not* allocate a massive `N x M` 2D array and fill it with zeros. Instead, it uses **Compressed Sparse Column (CSC)** or **Compressed Sparse Row (CSR)** format. 
+
+If you have a 100x100 matrix with only 5 non-zero elements, Eigen only stores 3 very tiny 1D arrays:
+1. `Values`: An array of `double` (size 5).
+2. `InnerIndices`: An array of integers storing the column/row index for each value (size 5).
+3. `OuterPointers`: An array of integers tracking where each row/col starts (size 101).
+
+## 2. What happens if you "hit" a zero?
+If you wrote a naive nested loop like this:
+```cpp
+for(int i=0; i<r; i++) {
+    for(int j=0; j<c; j++) {
+        // TERRIBLE IDEA FOR SPARSE MATRICES:
+        double val = sparse(i, j); 
+    }
+}
+```
+If you ask Eigen for `sparse(i, j)` where a zero exists, it has to perform a **binary search** in the `InnerIndices` array. If it doesn't find the index, it returns `0.0`. This is extremely slow ($O(\log N)$ per lookup).
+
+## 3. How the Eigen Backend handles it currently
+If you look inside our `backend_eigen.h`, we specifically **do NOT do this**. 
+
+Instead of looping over the grid `(i, j)` and checking if a non-zero exists, we loop directly over the 1D `Values` array using `InnerIterator`. 
+
+Because we only iterate over elements that *actually exist in memory*, **we never hit a zero!** The zeroes are physically skipped.
+
+```cpp
+// Iterate over the rows
+for (int k = 0; k < sparse.outerSize(); ++k) {
+    // Iterate ONLY over the non-zeros in that row
+    for (typename Eigen::SparseMatrix<T, Eigen::RowMajor>::InnerIterator it(sparse, k); it; ++it) {
+        T val = it.value(); // We know this is non-zero
+        int r = it.row();
+        int c = it.col();
+
+        // Multiply the dense T4 slice by this single non-zero value
+    }
+}
+```

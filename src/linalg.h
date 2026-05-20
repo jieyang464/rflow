@@ -14,6 +14,11 @@ inline T2 Commutator(const T2& A, const T2& B) {
     return MatMul(A, B) - MatMul(B, A);
 }
 
+// ── S-metric commutator: [A, B]_S = ASB − BSA ──────────────────────────────
+inline T2 SMetricCommutator(const T2& A, const T2& B, const T2& S) {
+    return MatMul(MatMul(A, S), B) - MatMul(MatMul(B, S), A);
+}
+
 // ── DIIS error matrix: e = FDS − SDF ───────────────────────────────────────
 inline T2 ComputeDIISError(const T2& F, const T2& D, const T2& S) {
     return MatMul(MatMul(F, D), S) - MatMul(MatMul(S, D), F);
@@ -71,6 +76,30 @@ inline T2 BCHTransform(const T2& X, const T2& A, int order) {
 
     for (int k = 1; k <= order; ++k) {
         nested = Commutator(X, nested);       // ad_X^k(A)
+        fact  *= k;
+        result = result + nested * (sign / fact);
+        sign   = -sign;
+    }
+    return result;
+}
+
+// ── S-metric BCH transform: e^{−XS} A e^{SX} ──────────────────────────────
+//
+//    Uses the S-metric adjoint action:
+//      e^{−XS} A e^{SX} = Σ_{k=0}^{∞}  (−1)^k / k!  ad_{X,S}^k(A)
+//    where  ad_{X,S}^0(A) = A,
+//           ad_{X,S}^k(A) = [X, ad_{X,S}^{k−1}(A)]_S
+//
+//    Truncated at the given order.
+//
+inline T2 BCHTransform(const T2& X, const T2& A, const T2& S, int order) {
+    T2     result = A;
+    T2     nested = A;          // ad_{X,S}^k(A)
+    double sign   = -1.0;      // (−1)^k starts at k=1 → −1
+    double fact   = 1.0;
+
+    for (int k = 1; k <= order; ++k) {
+        nested = SMetricCommutator(X, nested, S);
         fact  *= k;
         result = result + nested * (sign / fact);
         sign   = -sign;

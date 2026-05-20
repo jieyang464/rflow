@@ -1,29 +1,24 @@
 #pragma once
 
 #include <functional>
+#include <vector>
+#include <stdexcept>
 #include "types.h"
-
-struct Integrals {
-    T4 eri;
-    T2 hcore;
-    T2 overlap;
-};
-
-struct IntegralDerivatives {
-    std::vector<T4> d_eri;
-    std::vector<T2> d_hcore;
-    std::vector<T2> d_overlap;
-};
 
 struct IIntegralProvider {
     virtual ~IIntegralProvider() = default;
 
-    virtual Integrals ComputeIntegrals() const = 0;
+    virtual T2 ComputeHcore() const = 0;
+    virtual T2 ComputeOverlap() const = 0;
+    
+    // Computes and returns the full 4D ER tensor
+    virtual T4 ComputeERI() const = 0;
 
-    // Default: not implemented unless overridden.
-    virtual IntegralDerivatives ComputeFirstDerivatives() const {
-        throw std::runtime_error("Integral derivatives not implemented by this provider");
-    }
+    // Feed ERI tensor element (i, j | k, l) on the fly
+    virtual double ComputeERI(int i, int j, int k, int l) const = 0;
 
     virtual double ComputeNuclearRepulsionEnergy() const = 0;
 };
+
+
+ 

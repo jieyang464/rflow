@@ -29,8 +29,10 @@ LDLIBS   = $(XC_LDLIBS)
 SRCS = $(SRCDIR)/test.cpp \
        $(SRCDIR)/scf.cpp \
        $(SRCDIR)/fock_builders.cpp \
+       $(SRCDIR)/jk_builder.cpp \
        $(SRCDIR)/ci.cpp \
        $(SRCDIR)/SzaboHeHIntegral.cpp \
+       $(SRCDIR)/IDensityUpdater.cpp \
        $(SRCDIR)/xc/vxc_evaluator.cpp \
        $(SRCDIR)/xc/libxc_wrapper.cpp \
        $(SRCDIR)/xc/vxc_libxc_grid.cpp

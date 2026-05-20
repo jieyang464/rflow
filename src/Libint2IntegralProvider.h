@@ -42,7 +42,10 @@ public:
     void SetBasisByAtom(std::vector<std::string> basis_by_atom);
     void SetOptions(IntegralBuildOptions options);
 
-    Integrals ComputeIntegrals() const override;
+    T2 ComputeHcore() const override;
+    T2 ComputeOverlap() const override;
+    T4 ComputeERI() const override override;
+    double ComputeERI(int i, int j, int k, int l) const override;
     double ComputeNuclearRepulsionEnergy() const override;
     IntegralDerivatives ComputeFirstDerivatives() const override;
 
@@ -70,7 +73,10 @@ public:
     void SetBasisByAtom(std::vector<std::string>) { ThrowDisabled(); }
     void SetOptions(IntegralBuildOptions) { ThrowDisabled(); }
 
-    Integrals ComputeIntegrals() const override { ThrowDisabled(); }
+    T2 ComputeHcore() const override;
+    T2 ComputeOverlap() const override;
+    T4 ComputeERI() const override override { ThrowDisabled(); }
+    double ComputeERI(int i, int j, int k, int l) const override { ThrowDisabled(); }
     double ComputeNuclearRepulsionEnergy() const override { ThrowDisabled(); }
     IntegralDerivatives ComputeFirstDerivatives() const override { ThrowDisabled(); }
 

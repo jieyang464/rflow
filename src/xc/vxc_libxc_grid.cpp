@@ -47,7 +47,7 @@ void AccumulateLibxcLda(int functional_id, double rho_a, double rho_b,
 
 VxcFunctor make_libxc_vxc_functor() {
   return [](const UksDensityInput& in, UksVxcOutput& out) {
-    const T2& S = in.scf.integrals.overlap;
+    const T2& S = in.overlap;
     const Eigen::Index nbf = S.dimension(0);
     if (S.dimension(1) != nbf || in.Da.dimension(0) != nbf || in.Da.dimension(1) != nbf ||
         in.Db.dimension(0) != nbf || in.Db.dimension(1) != nbf) {
@@ -63,10 +63,10 @@ VxcFunctor make_libxc_vxc_functor() {
       double vxb_mu = 0.0;
 
       try {
-        if (in.scf.settings.xc_functional_id == xc::BuiltinFunctionalId::LsdaExchange) {
+        if (in.xc_functional_id == xc::BuiltinFunctionalId::LsdaExchange) {
           AccumulateBuiltinLsdaExchange(rho_a, rho_b, exc_mu, vxa_mu, vxb_mu);
-        } else if (in.scf.settings.xc_functional_id != xc::BuiltinFunctionalId::None) {
-          AccumulateLibxcLda(in.scf.settings.xc_functional_id, rho_a, rho_b,
+        } else if (in.xc_functional_id != xc::BuiltinFunctionalId::None) {
+          AccumulateLibxcLda(in.xc_functional_id, rho_a, rho_b,
                              exc_mu, vxa_mu, vxb_mu);
         }
       } catch (const std::exception&) {

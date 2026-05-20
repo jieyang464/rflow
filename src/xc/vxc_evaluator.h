@@ -4,12 +4,11 @@
 
 #include "types.h"
 
-struct SCFResults;
-
 struct UksDensityInput {
   const T2& Da;
   const T2& Db;
-  const SCFResults& scf;
+  const T2& overlap;
+  int xc_functional_id;
 };
 
 struct UksVxcOutput {
@@ -24,8 +23,6 @@ struct UksVxcOutput {
 
 using UksVxcPlugin = std::function<void(const UksDensityInput&, UksVxcOutput&)>;
 
-// Backwards-compatible alias expected by older modules.
 using VxcFunctor = UksVxcPlugin;
 
 VxcFunctor make_stub_vxc_functor();
-

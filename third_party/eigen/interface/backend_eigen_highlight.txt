@@ -1,0 +1,50 @@
+# How the Interface works when the Backend library (Eigen) lacks a feature
+
+Eigen **does not natively support** sparse diagonalization. If you try to pass an `Eigen::SparseMatrix` into `Eigen::SelfAdjointEigenSolver`, it will throw a compile error because the algorithms (QR/Divide-and-Conquer) destroy sparsity.
+
+### So, how is it done when you call `.diagonalize()` through the interface?
+
+Because your quantum chemistry code only talks to the generic `qc::SparseMatrix<double>`, it doesn't know that Eigen is missing this feature. The interface intercepts the call and handles the missing logic inside the `backend_eigen.h` adaptor file.
+
+There are exactly three ways you handle this missing Eigen feature inside the backend:
+
+#### 1. The Current State: The Dummy Hook
+Right now in our code, the interface routes the call to a specialized static function in `backend_eigen.h`:
+```cpp
+template <typename T>
+static void diagonalize_sparse(...) {
+    std::cout << "[Warning]: Missing implementation for sparse diag!\n";
+}
+```
+It compiles, but it doesn't do the math yet. It warns you that you need to fill in the blank.
+
+#### 2. The Immediate Solution: Use an iterative solver (Spectra)
+Because Eigen doesn't have an iterative solver built-in, you simply include an external iterative solver (like Spectra) *only* inside your backend file. The rest of your project never sees Spectra.
+```cpp
+#include <Spectra/SymEigsSolver.h> // <--- Added to backend_eigen.h
+
+template <typename T>
+static void diagonalize_sparse(const Eigen::SparseMatrix<T>& mat, ...) {
+    // We physically implement the missing math using Spectra!
+    Spectra::SparseSymMatProd<T> op(mat);
+    Spectra::SymEigsSolver<T, Spectra::SMALLEST_ALGE, Spectra::SparseSymMatProd<T>> eigs(op, 5, 20);
+    eigs.init();
+    eigs.compute();
+    // ... write result to evals/evecs ...
+}
+```
+**This is the beauty of the interface.** You patched Eigen's missing feature using Spectra, but your main physics solver (`do_hartree_fock_step()`) didn't change a single line of code!
+
+#### 3. The Alternative Solution: Block it at Compile Time
+If you decide you *don't want* to support Sparse Diagonalization when the Eigen backend is active (because you don't want to install Spectra), you can use C++20 Concepts to aggressively block the user.
+
+In `backend_eigen.h`, you would add a capability flag:
+```cpp
+static constexpr bool supports_sparse_diagonalization = false;
+```
+Then, in `qc_tensor.h`, you add that flag to the `requires` clause:
+```cpp
+void diagonalize(...) const 
+requires (Rank == 2 && IsSparse && ActiveBackend::supports_sparse_diagonalization) 
+```
+If a user writes `sparse_t2.diagonalize()` in their physics code, the compiler will instantly throw an error: *"Constraints not satisfied: ActiveBackend::supports_sparse_diagonalization is false"*.

@@ -1,38 +1,66 @@
 #pragma once
 
-#include <memory>
+#include "jk_builder.h"
 #include "types.h"
 #include "xc/vxc_evaluator.h"
+#include <memory>
 
-struct SCFResults;
+struct FockBuildInput {
+    const T2& Hcore;
+    const T2& S;
+    const T2& Da;
+    const T2& Db;
+};
 
-// Abstract interface used by the SCF driver to build Fock matrices.
+struct FockBuildResult {
+    T2 Fa;
+    T2 Fb;
+    double energy_correction{0.0};
+};
+
 class IFockBuilder {
 public:
     virtual ~IFockBuilder() = default;
-    // Build Fock matrices inside `scfResults.fockMatrices` and return a
-    // scalar energy correction that the driver should add to the SCF energy
-    // after the standard 0.5*Tr[D(H+F)] evaluation (used for XC corrections).
-    virtual double build_fock_and_energy(SCFResults& scfResults) = 0;
+    virtual FockBuildResult build(const FockBuildInput& in) = 0;
 };
 
-// Unrestricted HF builder: Fa = H + J - K_a, Fb = H + J - K_b
 class UHFBuilder : public IFockBuilder {
 public:
-    UHFBuilder() = default;
-    double build_fock_and_energy(SCFResults& scfResults) override;
-};
-
-// Unrestricted KS builder: builds HF-like Coulomb/Exchange terms and adds
-// Vxc from the configured vxc functor. Returns the XC energy correction
-// (Exc - 0.5 * Tr[P Vxc]) so the driver can form the correct total energy.
-class UKSBuilder : public IFockBuilder {
-public:
-    UKSBuilder(VxcFunctor vxc_functor = make_stub_vxc_functor(),
-               double exact_exchange_fraction = 0.0);
-    double build_fock_and_energy(SCFResults& scfResults) override;
+    explicit UHFBuilder(std::unique_ptr<IJKBuilder> jk_builder);
+    FockBuildResult build(const FockBuildInput& in) override;
 
 private:
+    std::unique_ptr<IJKBuilder> jk_builder_;
+
+    struct Scratch {
+        T2 J;
+        T2 Ka;
+        T2 Kb;
+    } scratch_;
+};
+
+class UKSBuilder : public IFockBuilder {
+public:
+    UKSBuilder(std::unique_ptr<IJKBuilder> jk_builder,
+               VxcFunctor vxc_functor,
+               int xc_functional_id,
+               double exact_exchange_fraction = 0.0);
+
+    FockBuildResult build(const FockBuildInput& in) override;
+
+private:
+    std::unique_ptr<IJKBuilder> jk_builder_;
     VxcFunctor vxc_functor_;
-    double exact_exchange_fraction_;
+    int xc_functional_id_{0};
+    double exact_exchange_fraction_{0.0};
+
+    struct Scratch {
+        T2 J;
+        T2 Ka;
+        T2 Kb;
+        T2 Vxc_a;
+        T2 Vxc_b;
+        double Exc{0.0};
+        double tr_PVxc{0.0};
+    } scratch_;
 };

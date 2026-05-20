@@ -111,116 +111,116 @@ static void FillSymmetricMatrix(Eigen::Tensor<double, 2>& mat,
     }
 }
 
-Integrals Libint2IntegralProvider::ComputeIntegrals() const {
+double Libint2IntegralProvider::ComputeERI(int, int, int, int) const { throw std::runtime_error("Not implemented"); }
+
+
+T2 Libint2IntegralProvider::ComputeOverlap() const {
     const auto& basis = impl_->basis;
     const auto nbf = static_cast<int>(basis.nbf());
-
-    // One-body integrals
     const auto max_nprim = basis.max_nprim();
-    const auto max_l = basis.max_l();
+    const auto max_l_i = static_cast<int>(basis.max_l());
+    libint2::Engine overlap_engine(libint2::Operator::overlap, max_nprim, max_l_i, 0);
 
-    const int max_l_i = static_cast<int>(max_l);
-    // Compute only the 0th-order (non-derivative) integrals here.
-    libint2::Engine overlap_engine(libint2::Operator::overlap, max_nprim,
-                                   max_l_i, 0);
-    libint2::Engine kinetic_engine(libint2::Operator::kinetic, max_nprim,
-                                   max_l_i, 0);
-    libint2::Engine nuclear_engine(
-        libint2::Operator::nuclear, max_nprim, max_l_i, 0,
-        std::numeric_limits<double>::epsilon(), impl_->nuclear_charges);
-
-    Integrals out;
-    out.overlap = T2(nbf, nbf);
-    out.overlap.setZero();
-    out.hcore = T2(nbf, nbf);
-    out.hcore.setZero();
-    out.eri = T4(nbf, nbf, nbf, nbf);
-    out.eri.setZero();
-
+    T2 overlap(nbf, nbf);
+    overlap.setZero();
     const auto& shell2bf = basis.shell2bf();
     const auto nshell = basis.size();
 
-    // Build all one-body integrals.
     for (size_t s1 = 0; s1 < nshell; ++s1) {
         for (size_t s2 = 0; s2 <= s1; ++s2) {
             const auto& shell1 = basis[s1];
             const auto& shell2 = basis[s2];
-
             const size_t i0 = shell2bf[s1];
             const size_t j0 = shell2bf[s2];
-            const int n1 = static_cast<int>(shell1.size());
-            const int n2 = static_cast<int>(shell2.size());
-
-            // Overlap
-            auto ov_results = overlap_engine.compute1(shell1, shell2);
+            auto ov_results = overlap_engine.compute(shell1, shell2);
             if (ov_results[0]) {
-                FillSymmetricMatrix(out.overlap, i0, j0, n1, n2, ov_results[0]);
-            }
-
-            // Kinetic
-            auto kin_results = kinetic_engine.compute1(shell1, shell2);
-            if (kin_results[0]) {
-                FillSymmetricMatrix(out.hcore, i0, j0, n1, n2, kin_results[0]);
-            }
-
-            // Nuclear attraction
-            auto nuc_results = nuclear_engine.compute1(shell1, shell2);
-            if (nuc_results[0]) {
-                // Add nuclear attraction to hcore (hcore = T + V)
-                for (int p = 0; p < n1; ++p) {
-                    for (int q = 0; q < n2; ++q) {
-                        const double val = nuc_results[0][p * n2 + q];
-                        out.hcore(i0 + p, j0 + q) += val;
-                        if (i0 + p != j0 + q) {
-                            out.hcore(j0 + q, i0 + p) += val;
-                        }
-                    }
-                }
+                FillSymmetricMatrix(overlap, i0, j0, shell1.size(), shell2.size(), ov_results[0]);
             }
         }
     }
+    return overlap;
+}
 
-    // Two-electron integrals (ERI) using chemist notation (mu nu | lambda sigma)
-    libint2::Engine eri_engine(libint2::Operator::coulomb, max_nprim, max_l_i, 0);
+T2 Libint2IntegralProvider::ComputeHcore() const {
+    const auto& basis = impl_->basis;
+    const auto nbf = static_cast<int>(basis.nbf());
+    const auto max_nprim = basis.max_nprim();
+    const auto max_l_i = static_cast<int>(basis.max_l());
+    
+    libint2::Engine kinetic_engine(libint2::Operator::kinetic, max_nprim, max_l_i, 0);
+    libint2::Engine nuclear_engine(libint2::Operator::nuclear, max_nprim, max_l_i, 0);
+    nuclear_engine.set_params(impl_->nuclear_charges);
 
-    for (size_t a = 0; a < nshell; ++a) {
-        for (size_t b = 0; b < nshell; ++b) {
-            for (size_t c = 0; c < nshell; ++c) {
-                for (size_t d = 0; d < nshell; ++d) {
-                    const auto& shell_a = basis[a];
-                    const auto& shell_b = basis[b];
-                    const auto& shell_c = basis[c];
-                    const auto& shell_d = basis[d];
+    T2 hcore(nbf, nbf);
+    hcore.setZero();
+    const auto& shell2bf = basis.shell2bf();
+    const auto nshell = basis.size();
 
-                    // Use template deriv_order matching the engine's runtime deriv order.
-                    // libint2 asserts that these must match.
-                    // Always compute non-derivative ERIs here.
-                    const auto& eri_results =
-                        eri_engine.compute2<libint2::Operator::coulomb,
-                                            libint2::BraKet::xx_xx,
-                                            0>(shell_a, shell_b, shell_c,
-                                              shell_d);
-                    if (eri_results.empty() || !eri_results[0]) continue;
+    for (size_t s1 = 0; s1 < nshell; ++s1) {
+        for (size_t s2 = 0; s2 <= s1; ++s2) {
+            const auto& shell1 = basis[s1];
+            const auto& shell2 = basis[s2];
+            const size_t i0 = shell2bf[s1];
+            const size_t j0 = shell2bf[s2];
+            
+            auto kin_results = kinetic_engine.compute(shell1, shell2);
+            if (kin_results[0]) {
+                FillSymmetricMatrix(hcore, i0, j0, shell1.size(), shell2.size(), kin_results[0]);
+            }
+            auto nuc_results = nuclear_engine.compute(shell1, shell2);
+            if (nuc_results[0]) {
+                FillSymmetricMatrix(hcore, i0, j0, shell1.size(), shell2.size(), nuc_results[0]);
+            }
+        }
+    }
+    return hcore;
+}
 
-                    const size_t a0 = shell2bf[a];
-                    const size_t b0 = shell2bf[b];
-                    const size_t c0 = shell2bf[c];
-                    const size_t d0 = shell2bf[d];
-                    const int na = static_cast<int>(shell_a.size());
-                    const int nb = static_cast<int>(shell_b.size());
-                    const int nc = static_cast<int>(shell_c.size());
-                    const int nd = static_cast<int>(shell_d.size());
-                    const double* buf = eri_results[0];
+T4 Libint2IntegralProvider::ComputeERI() const {
+    const auto& basis = impl_->basis;
+    const auto nbf = static_cast<int>(basis.nbf());
+    T4 eri(nbf, nbf, nbf, nbf);
+    eri.setZero();
 
-                    for (int ia = 0; ia < na; ++ia) {
-                        for (int ib = 0; ib < nb; ++ib) {
-                            for (int ic = 0; ic < nc; ++ic) {
-                                for (int id = 0; id < nd; ++id) {
-                                    const size_t idx =
-                                        (((static_cast<size_t>(ia) * nb + ib) * nc + ic) * nd) +
-                                        id;
-                                    out.eri(a0 + ia, b0 + ib, c0 + ic, d0 + id) =
-                                        buf[idx];
+    libint2::Engine coulomb_engine(libint2::Operator::coulomb, basis.max_nprim(), basis.max_l(), 0);
+    const auto& shell2bf = basis.shell2bf();
+    const auto nshell = basis.size();
+
+    for (size_t s1 = 0; s1 < nshell; ++s1) {
+        for (size_t s2 = 0; s2 <= s1; ++s2) {
+            for (size_t s3 = 0; s3 <= s1; ++s3) {
+                const auto s4_max = (s1 == s3) ? s2 : s3;
+                for (size_t s4 = 0; s4 <= s4_max; ++s4) {
+                    const auto* buf = coulomb_engine.compute(basis[s1], basis[s2], basis[s3], basis[s4]);
+                    if (buf && buf[0] != nullptr) {
+                        const size_t i0 = shell2bf[s1];
+                        const size_t j0 = shell2bf[s2];
+                        const size_t k0 = shell2bf[s3];
+                        const size_t l0 = shell2bf[s4];
+                        const size_t n1 = basis[s1].size();
+                        const size_t n2 = basis[s2].size();
+                        const size_t n3 = basis[s3].size();
+                        const size_t n4 = basis[s4].size();
+
+                        const double* ptr = buf[0];
+                        for (size_t f1 = 0; f1 < n1; ++f1) {
+                            const size_t bf1 = i0 + f1;
+                            for (size_t f2 = 0; f2 < n2; ++f2) {
+                                const size_t bf2 = j0 + f2;
+                                for (size_t f3 = 0; f3 < n3; ++f3) {
+                                    const size_t bf3 = k0 + f3;
+                                    for (size_t f4 = 0; f4 < n4; ++f4) {
+                                        const size_t bf4 = l0 + f4;
+                                        double val = *ptr++;
+                                        eri(bf1, bf2, bf3, bf4) = val;
+                                        eri(bf2, bf1, bf3, bf4) = val;
+                                        eri(bf1, bf2, bf4, bf3) = val;
+                                        eri(bf2, bf1, bf4, bf3) = val;
+                                        eri(bf3, bf4, bf1, bf2) = val;
+                                        eri(bf3, bf4, bf2, bf1) = val;
+                                        eri(bf4, bf3, bf1, bf2) = val;
+                                        eri(bf4, bf3, bf2, bf1) = val;
+                                    }
                                 }
                             }
                         }
@@ -229,30 +229,7 @@ Integrals Libint2IntegralProvider::ComputeIntegrals() const {
             }
         }
     }
-
-    return out;
-}
-
-double Libint2IntegralProvider::ComputeNuclearRepulsionEnergy() const {
-    const auto& nuc = impl_->nuclear_charges;
-    const int natoms = static_cast<int>(nuc.size());
-    double energy = 0.0;
-    for (int i = 0; i < natoms; ++i) {
-        for (int j = i + 1; j < natoms; ++j) {
-            const double qi = nuc[i].first;
-            const double qj = nuc[j].first;
-            const auto& ri = nuc[i].second;
-            const auto& rj = nuc[j].second;
-            const double dx = ri[0] - rj[0];
-            const double dy = ri[1] - rj[1];
-            const double dz = ri[2] - rj[2];
-            const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
-            if (r > 0.0) {
-                energy += qi * qj / r;
-            }
-        }
-    }
-    return energy;
+    return eri;
 }
 
 IntegralDerivatives Libint2IntegralProvider::ComputeFirstDerivatives() const {

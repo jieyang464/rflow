@@ -1,0 +1,28 @@
+# Tensor Layout and Index Ordering Convention
+
+## Eigen's Default Convention
+Eigen Matrices AND Eigen Tensors both default to **Column-Major** memory layout.
+However, their *index ordering* API behaves sequentially:
+
+### Eigen::Matrix
+`matrix(i, j)` where:
+- `i` is the row index (dimension 0).
+- `j` is the column index (dimension 1).
+
+### Eigen::Tensor
+`tensor(i, j, k, l)` where:
+- `i` is dimension 0.
+- `j` is dimension 1.
+- `k` is dimension 2.
+- `l` is dimension 3.
+
+## The Quantum Chemistry Convention
+In standard physics notation (like Dirac notation or Einstein summation), we usually write matrices as $M_{ij}$ where $i$ is row and $j$ is column.
+For integrals, we write $(ij|kl)$ or $\langle ij | kl \rangle$.
+
+## How the Interface Handles This
+The `qc_tensor.h` interface **preserves the index ordering** of the backend.
+If Rank 0 is Rows and Rank 1 is Cols in the backend, then:
+`pairs[0] = std::pair(1, 0)` means "Contract dimension 1 (Columns) of Tensor A against dimension 0 (Rows) of Tensor B".
+
+This mapping is mathematically transparent and ensures zero cognitive overhead when looking at the underlying Eigen code.

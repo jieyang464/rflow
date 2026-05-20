@@ -1,26 +1,37 @@
-//test running the full SCF + CI workflow for HeH+ molecule using Szabo's integrals and a simple UHF builder.
 #include <iostream>
-
 
 #include "SzaboHeHIntegral.h"
 #include "scf.h"
 #include "fock_builders.h"
+#include "IDensityUpdater.h"
 #include "ci.h"
 
 int main() {
     SzaboHeHIntegralProvider szabo_integral_provider;
     const IIntegralProvider& integral_provider = szabo_integral_provider;
     const double nuclear_repulsion = integral_provider.ComputeNuclearRepulsionEnergy();
+    
+    // Abstract out the T2s
+    T2 hcore = integral_provider.ComputeHcore();
+    T2 overlap = integral_provider.ComputeOverlap();
+    T4 eri = integral_provider.ComputeERI();
+
+    SCFSettings settings;
+    settings.Na = 1;
+    settings.Nb = 1;
 
     SCFResults scfResults;
-    scfResults.settings.break_symmetry = false; // disable spin symmetry breaking → RHF behavior
-    scfResults.settings.Na = 1;
-    scfResults.settings.Nb = 1;
-    scfResults.integrals = integral_provider.ComputeIntegrals();
     scfResults.nuclear_repulsion = nuclear_repulsion;
 
-    UHFBuilder fock_builder;
-    SCFLoop(scfResults, fock_builder);
+    GenerateInitialGuess(hcore, overlap, settings.Na, settings.Nb, scfResults);
+
+    // Create the JK builder (using InCore since we just fetched the T4)
+    auto jk_builder = std::make_unique<InCoreJKBuilder>(std::move(eri));
+    
+    UHFBuilder fock_builder(std::move(jk_builder));
+    FockDiagonalizationDensityUpdater updater;
+
+    SCFLoop(settings, fock_builder, updater, overlap, hcore, scfResults);
 
     std::cout << "SCF converged energy = " << scfResults.energy << "\n";
     std::cout << "Nuclear repulsion energy (Vnn) = " << nuclear_repulsion << "\n";
@@ -32,11 +43,14 @@ int main() {
         std::cout << "\n";
     }
 
+    // Since we moved eri, we will need it for TransformAO2MO.
+    // So let's re-fetch it from provider for the CI part.
+    T4 eri_ao = integral_provider.ComputeERI();
     T2 h_mo;
     T4 eri_mo;
     TransformAO2MO(scfResults.moCoefficients.Ca,
-                   scfResults.integrals.hcore,
-                   scfResults.integrals.eri,
+                   hcore,
+                   eri_ao,
                    h_mo,
                    eri_mo);
 
@@ -104,5 +118,4 @@ int main() {
     }
 
     return 0;
-    
 }
