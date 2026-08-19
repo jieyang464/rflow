@@ -15,10 +15,7 @@ struct IIntegralProvider {
     virtual T4 ComputeERI() const = 0;
 
     // Feed ERI tensor element (i, j | k, l) on the fly
-    virtual double ComputeERI(int i, int j, int k, int l) const = 0;
+    virtual double ComputeERI(int i, int j, int k, int l) const;
 
     virtual double ComputeNuclearRepulsionEnergy() const = 0;
 };
-
-
- 

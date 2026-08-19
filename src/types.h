@@ -6,14 +6,6 @@
 #include <unordered_map>
 #include <vector>
 
-#ifndef SCFCXX_ENABLE_LIBINT2_PROVIDER
-#define SCFCXX_ENABLE_LIBINT2_PROVIDER 1
-#endif
-
-#if SCFCXX_ENABLE_LIBINT2_PROVIDER
-#include <libint2.hpp>
-#endif
-
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
 #include <unsupported/Eigen/CXX11/Tensor>
@@ -41,4 +33,3 @@ struct Molecule {
     std::vector<AtomWithBasis> atoms;
 
 };
-
