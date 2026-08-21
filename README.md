@@ -1,8 +1,8 @@
-# dmqc
+# scfcxx
 
-**Density-matrix quantum chemistry.** A self-directed implementation of an
-unrestricted Hartree–Fock and Kohn–Sham program in which the density matrix is
-converged by *rotating it* rather than by diagonalizing a Fock matrix.
+A self-directed implementation of **density-matrix-based SCF**: an unrestricted
+Hartree–Fock and Kohn–Sham program in which the density matrix is converged by
+*rotating it* rather than by diagonalizing a Fock matrix.
 
 This is a **proof of concept**. The claim it makes good on is narrow and
 specific: *swapping the Fock diagonalization for a commutator-driven density
@@ -72,6 +72,9 @@ whatever comes next — a deliberate design point, controlled by
 The project applies abstract base class interfaces extensively on places like
 integral (derivative) providers, density matrice updator, Fock builder effective 
 density builders to achieve a modular and maintainable design.
+Such as, it currently provides two integral providers one based on the Szabo 
+book's HeH+ numerical example, another being the libint2, and is flexible with 
+adding new integral providers
 ---
 
 ## Installing
@@ -140,7 +143,7 @@ daigonalization, but that is not implemented yet.
 - **Sparse density matrices from Eigen**
 - **MP2 with on-the-fly t2** 
 - **MP2 gradient entirely based on AO integrals**
-- **CCD and CIS(D infinite)**
+- **CCD and CIS(D_infinite)**
 
 
 ---
