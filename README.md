@@ -69,7 +69,8 @@ integral (derivative) providers, density matrice updator, Fock builder effective
 density builders to achieve a modular and maintainable design.
 Such as, it currently provides two integral providers one based on the Szabo 
 book's HeH+ numerical example, another being the libint2, and is flexible with 
-adding new integral providers
+adding new integral providers.
+
 ---
 
 ## Installing
