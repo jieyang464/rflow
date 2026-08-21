@@ -1,6 +1,7 @@
 #include "IDensityUpdater.h"
 #include "linalg.h"
-#include <iostream>
+
+#include <stdexcept>
 
 CommutatorDensityUpdater::CommutatorDensityUpdater(int bch_order, double step)
     : bch_order_(bch_order), step_(step) {}
@@ -9,10 +10,6 @@ void CommutatorDensityUpdater::UpdateDensity(const T2& F, const T2& S, T2& D) co
     // Calculate R = FDS - SDF
     T2 R = ComputeDIISError(F, D, S);
     
-    // Check magnitude of R
-    double err = MaxAbsElement(R);
-    std::cout << "Commutator norm (MaxAbsElement(FDS-SDF)): " << err << "\n";
-
     // Apply step size
     R = R * step_;
 
@@ -23,6 +20,14 @@ void CommutatorDensityUpdater::UpdateDensity(const T2& F, const T2& S, T2& D) co
     // To ensure idempotency (D S D = D)
     T2 D_S_D = MatMul(MatMul(D, S), D);
     D = D_S_D * 3.0 - MatMul(MatMul(D_S_D, S), D) * 2.0;
+}
+
+FockDiagonalizationDensityUpdater::FockDiagonalizationDensityUpdater(double damping)
+    : damping_(damping) {
+    if (!(damping > 0.0) || damping > 1.0) {
+        throw std::invalid_argument(
+            "FockDiagonalizationDensityUpdater: damping must lie in (0, 1].");
+    }
 }
 
 void FockDiagonalizationDensityUpdater::UpdateDensity(const T2& F, const T2& S, T2& D) const {
@@ -43,5 +48,9 @@ void FockDiagonalizationDensityUpdater::UpdateDensity(const T2& F, const T2& S, 
     }
 
     const Eigen::array<Eigen::IndexPair<int>, 1> cols = {Eigen::IndexPair<int>(1, 1)};
-    D = C_occ.contract(C_occ, cols);
+    const T2 D_new = C_occ.contract(C_occ, cols);
+
+    // Both D and D_new have trace n_elec in the S metric, so any convex mixture
+    // does too -- damping cannot lose electrons.
+    D = (damping_ == 1.0) ? D_new : (D_new * damping_ + D * (1.0 - damping_));
 }

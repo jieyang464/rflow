@@ -134,6 +134,30 @@ std::vector<std::string> ResolveBasisNames(const Molecule& molecule,
     return basis_names;
 }
 
+// Convert this project's provider-agnostic shell description into libint2's.
+// GaussianShell already stores coefficients in libint2's normalization-free
+// convention, so the numbers pass through untouched; the only reason to bypass
+// libint2::Shell's constructor (which would renormalize them a second time) is
+// to set the coefficients directly.
+libint2::Shell ToLibintShell(const GaussianShell& shell) {
+    libint2::svector<double> alpha(shell.exponents.begin(), shell.exponents.end());
+    libint2::svector<double> coeff(shell.coefficients.begin(), shell.coefficients.end());
+
+    // Build with unit coefficients, then overwrite: libint2::Shell's constructor
+    // calls renorm(), which must not be applied to already-normalized values.
+    libint2::Shell out{alpha,
+                       {{shell.l, shell.pure, libint2::svector<double>(alpha.size(), 1.0)}},
+                       {{shell.origin[0], shell.origin[1], shell.origin[2]}}};
+    out.contr[0].coeff = coeff;
+
+    // renorm() also fills max_ln_coeff, which the screening machinery reads.
+    out.max_ln_coeff.resize(alpha.size());
+    for (std::size_t p = 0; p < alpha.size(); ++p) {
+        out.max_ln_coeff[p] = std::log(std::abs(coeff[p]));
+    }
+    return out;
+}
+
 // Write one shell-pair block of a symmetric matrix.  `mirror` must be true only
 // when the two shells differ: for a diagonal block (s1 == s2) libint2 already
 // returns the full square, so mirroring it would double the off-diagonal
@@ -172,6 +196,35 @@ struct Libint2IntegralProvider::Impl {
 
     mutable std::unique_ptr<T4> eri_cache;
 
+    // Construct on an explicitly supplied basis.  shell2atom is resolved by
+    // matching each shell's origin against the atomic centres.
+    Impl(const Molecule& molecule_, const BasisShells& explicit_basis,
+         IntegralBuildOptions options_)
+        : molecule(molecule_), options(options_) {
+        atoms = ToLibintAtoms(molecule);
+        nuclear_charges = BuildNuclearCharges(atoms);
+        basis_names.assign(molecule.atoms.size(), "<explicit>");
+
+        for (const auto& shell : explicit_basis) {
+            shells.push_back(ToLibintShell(shell));
+
+            std::size_t owner = atoms.size();
+            for (std::size_t a = 0; a < atoms.size(); ++a) {
+                const double dx = shell.origin[0] - atoms[a].x;
+                const double dy = shell.origin[1] - atoms[a].y;
+                const double dz = shell.origin[2] - atoms[a].z;
+                if (dx * dx + dy * dy + dz * dz < 1e-16) { owner = a; break; }
+            }
+            if (owner == atoms.size()) {
+                throw std::invalid_argument(
+                    "Libint2IntegralProvider: an explicit shell is not centred on any atom.");
+            }
+            shell2atom.push_back(owner);
+        }
+
+        Finalize();
+    }
+
     Impl(const Molecule& molecule_, std::vector<std::string> basis_by_atom_,
          IntegralBuildOptions options_)
         : molecule(molecule_),
@@ -192,6 +245,11 @@ struct Libint2IntegralProvider::Impl {
             }
         }
 
+        Finalize();
+    }
+
+    // Derive the per-shell offsets and engine sizing shared by both constructors.
+    void Finalize() {
         for (const auto& shell : shells) {
             shell2bf.push_back(static_cast<std::size_t>(nbf));
             nbf += static_cast<int>(shell.size());
@@ -245,6 +303,11 @@ Libint2IntegralProvider::Libint2IntegralProvider(const Molecule& molecule,
                                                  std::vector<std::string> basis_by_atom,
                                                  IntegralBuildOptions options)
     : impl_(std::make_unique<Impl>(molecule, std::move(basis_by_atom), options)) {}
+
+Libint2IntegralProvider::Libint2IntegralProvider(const Molecule& molecule,
+                                                 BasisShells explicit_basis,
+                                                 IntegralBuildOptions options)
+    : impl_(std::make_unique<Impl>(molecule, explicit_basis, options)) {}
 
 Libint2IntegralProvider::~Libint2IntegralProvider() = default;
 

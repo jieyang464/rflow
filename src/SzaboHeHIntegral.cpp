@@ -1,9 +1,40 @@
 #include "SzaboHeHIntegral.h"
-#include <iostream>
+
+#include <stdexcept>
+
+namespace szabo_heh {
+namespace {
+
+BasisShells BuildBasis() {
+    auto scaled = [](double zeta) {
+        std::vector<double> exponents = UnitZetaExponents();
+        for (double& a : exponents) a *= zeta * zeta;
+        return exponents;
+    };
+
+    BasisShells shells;
+    shells.push_back(MakeShell(/*l=*/0, /*pure=*/false, Vec3{{0.0, 0.0, 0.0}},
+                               scaled(kZetaHe), UnitZetaCoefficients()));
+    shells.push_back(MakeShell(/*l=*/0, /*pure=*/false, Vec3{{0.0, 0.0, kBondLengthBohr}},
+                               scaled(kZetaH), UnitZetaCoefficients()));
+    return shells;
+}
+
+}  // namespace
+
+BasisShells MakeBasis() { return BuildBasis(); }
+
+std::vector<Atom> MakeAtoms() {
+    return {
+        Atom{"He", 2, 0.0, 0.0, 0.0},
+        Atom{"H", 1, 0.0, 0.0, kBondLengthBohr},
+    };
+}
+
+}  // namespace szabo_heh
 
 T2 SzaboHeHIntegralProvider::ComputeHcore() const {
-    T2 hcore;
-    hcore.resize(2, 2);
+    T2 hcore(2, 2);
     hcore.setZero();
     hcore(0, 0) = -2.652744703;
     hcore(0, 1) = -1.347205024;
@@ -13,8 +44,7 @@ T2 SzaboHeHIntegralProvider::ComputeHcore() const {
 }
 
 T2 SzaboHeHIntegralProvider::ComputeOverlap() const {
-    T2 overlap;
-    overlap.resize(2, 2);
+    T2 overlap(2, 2);
     overlap.setZero();
     overlap(0, 0) = 1.0;
     overlap(0, 1) = 0.4508;
@@ -24,8 +54,7 @@ T2 SzaboHeHIntegralProvider::ComputeOverlap() const {
 }
 
 T4 SzaboHeHIntegralProvider::ComputeERI() const {
-    T4 eri;
-    eri.resize(2, 2, 2, 2);
+    T4 eri(2, 2, 2, 2);
     eri.setZero();
     eri(0, 0, 0, 0) = 1.307152;
     eri(0, 0, 0, 1) = 0.437279;
@@ -47,30 +76,11 @@ T4 SzaboHeHIntegralProvider::ComputeERI() const {
 }
 
 double SzaboHeHIntegralProvider::ComputeERI(int i, int j, int k, int l) const {
-    // For SzaboHeH this feels inefficient, but fits the interface
+    if (i < 0 || j < 0 || k < 0 || l < 0 || i > 1 || j > 1 || k > 1 || l > 1) {
+        throw std::out_of_range("SzaboHeHIntegralProvider: ERI index out of range.");
+    }
+    // Rebuilding a 2x2x2x2 tensor is cheap enough that caching would only add
+    // state; the libint2 provider, where it matters, does cache.
     return ComputeERI()(i, j, k, l);
 }
 
-IntegralDerivatives SzaboHeHIntegralProvider::ComputeFirstDerivatives() const {
-    IntegralDerivatives out;
-    std::cout << "SzaboHeHIntegralDerivatives: returning zero derivatives for testing\n";   
-    out.d_hcore.resize(6);  // 3 coords/atom * 2 atoms
-    for (auto& m : out.d_hcore) {
-        m.resize(2, 2);
-        m.setZero();
-    }
-
-    out.d_eri.resize(6);  // 3 coords/atom * 2 atoms
-    for (auto& t : out.d_eri) {
-        t.resize(2, 2, 2, 2);
-        t.setZero();
-    }
-
-    out.d_overlap.resize(6);  // 3 coords/atom * 2 atoms
-    for (auto& m : out.d_overlap) {
-        m.resize(2, 2);
-        m.setZero();
-    }
-
-    return out;
-}

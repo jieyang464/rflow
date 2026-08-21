@@ -1,74 +1,122 @@
 #include "fock_builders.h"
-#include "scf.h"
-#include "xc/vxc_evaluator.h"
 
-#include <algorithm>
+#include <stdexcept>
+#include <string>
+#include <utility>
 
-UHFBuilder::UHFBuilder(std::unique_ptr<IJKBuilder> jk_builder)
-    : jk_builder_(std::move(jk_builder)) {}
+#include "linalg.h"
 
-FockBuildResult UHFBuilder::build(const FockBuildInput& in) {
-    const T2& H = in.Hcore;
-    const Eigen::Index nbf = H.dimension(0);
+namespace {
 
-    scratch_.J.resize(nbf, nbf);
-    scratch_.Ka.resize(nbf, nbf);
-    scratch_.Kb.resize(nbf, nbf);
-    scratch_.J.setZero();
-    scratch_.Ka.setZero();
-    scratch_.Kb.setZero();
+// Tr(A B) for symmetric A and B.
+double TraceProduct(const T2& A, const T2& B) {
+    const Eigen::Index n = A.dimension(0);
+    double trace = 0.0;
+    for (Eigen::Index i = 0; i < n; ++i) {
+        for (Eigen::Index j = 0; j < n; ++j) {
+            trace += A(i, j) * B(j, i);
+        }
+    }
+    return trace;
+}
+
+// Eigen::Tensor::resize does not reallocate when the total size is unchanged,
+// so this reuses the existing buffers across SCF iterations.
+void ResizeAndZero(T2& m, Eigen::Index n) {
+    m.resize(n, n);
+    m.setZero();
+}
+
+void CheckDensityShape(const T2& D, Eigen::Index nbf, const char* name) {
+    if (D.dimension(0) != nbf || D.dimension(1) != nbf) {
+        throw std::invalid_argument(std::string("Fock build: ") + name +
+                                    " does not match the shape of Hcore.");
+    }
+}
+
+}  // namespace
+
+UHFBuilder::UHFBuilder(std::unique_ptr<IJKBuilder> jk_builder, const T2& hcore)
+    : jk_builder_(std::move(jk_builder)), hcore_(hcore) {
+    if (!jk_builder_) throw std::invalid_argument("UHFBuilder: null JK builder.");
+}
+
+void UHFBuilder::build(const FockBuildInput& in, FockBuildResult& out) {
+    const Eigen::Index nbf = hcore_.dimension(0);
+    CheckDensityShape(in.Da, nbf, "Da");
+    CheckDensityShape(in.Db, nbf, "Db");
+
+    ResizeAndZero(scratch_.J, nbf);
+    ResizeAndZero(scratch_.Ka, nbf);
+    ResizeAndZero(scratch_.Kb, nbf);
 
     jk_builder_->build_JK(in.Da, in.Db, scratch_.J, scratch_.Ka, scratch_.Kb);
 
-    FockBuildResult result;
-    result.Fa = H + scratch_.J - scratch_.Ka;
-    result.Fb = H + scratch_.J - scratch_.Kb;
-    result.energy_correction = 0.0;
-    return result;
+    out.Fa = hcore_ + scratch_.J - scratch_.Ka;
+    out.Fb = hcore_ + scratch_.J - scratch_.Kb;
+
+    const T2 D_total = in.Da + in.Db;
+    out.electronic_energy = TraceProduct(D_total, hcore_) +
+                            0.5 * TraceProduct(D_total, scratch_.J) -
+                            0.5 * (TraceProduct(in.Da, scratch_.Ka) +
+                                   TraceProduct(in.Db, scratch_.Kb));
 }
 
 UKSBuilder::UKSBuilder(std::unique_ptr<IJKBuilder> jk_builder,
-                       VxcFunctor vxc_functor,
-                       int xc_functional_id,
-                       double exact_exchange_fraction)
+                       const T2& hcore,
+                       dft::DftGridContext grid,
+                       xc::FunctionalSpec functional)
     : jk_builder_(std::move(jk_builder)),
-      vxc_functor_(std::move(vxc_functor)),
-      xc_functional_id_(xc_functional_id),
-      exact_exchange_fraction_(exact_exchange_fraction) {}
+      hcore_(hcore),
+      grid_(std::move(grid)),
+      functional_(std::move(functional)) {
+    if (!jk_builder_) throw std::invalid_argument("UKSBuilder: null JK builder.");
+    if (functional_.NeedsGrid() && grid_.empty()) {
+        throw std::invalid_argument(
+            "UKSBuilder: the selected functional needs a grid but the context is empty.");
+    }
+}
 
-FockBuildResult UKSBuilder::build(const FockBuildInput& in) {
-    const T2& H = in.Hcore;
-    const T2& S = in.S;
-    const Eigen::Index nbf = H.dimension(0);
+void UKSBuilder::build(const FockBuildInput& in, FockBuildResult& out) {
+    const Eigen::Index nbf = hcore_.dimension(0);
+    CheckDensityShape(in.Da, nbf, "Da");
+    CheckDensityShape(in.Db, nbf, "Db");
 
-    scratch_.J.resize(nbf, nbf);
-    scratch_.Ka.resize(nbf, nbf);
-    scratch_.Kb.resize(nbf, nbf);
-    scratch_.J.setZero();
-    scratch_.Ka.setZero();
-    scratch_.Kb.setZero();
+    ResizeAndZero(scratch_.J, nbf);
+    ResizeAndZero(scratch_.Ka, nbf);
+    ResizeAndZero(scratch_.Kb, nbf);
 
     jk_builder_->build_JK(in.Da, in.Db, scratch_.J, scratch_.Ka, scratch_.Kb);
 
-    const double ax = exact_exchange_fraction_;
-    FockBuildResult result;
-    result.Fa = H + scratch_.J - ax * scratch_.Ka;
-    result.Fb = H + scratch_.J - ax * scratch_.Kb;
+    const double ax = functional_.exact_exchange_fraction;
 
-    scratch_.Vxc_a.resize(nbf, nbf);
-    scratch_.Vxc_b.resize(nbf, nbf);
-    scratch_.Vxc_a.setZero();
-    scratch_.Vxc_b.setZero();
+    out.Fa = hcore_ + scratch_.J - ax * scratch_.Ka;
+    out.Fb = hcore_ + scratch_.J - ax * scratch_.Kb;
+
+    ResizeAndZero(scratch_.Vxc_a, nbf);
+    ResizeAndZero(scratch_.Vxc_b, nbf);
     scratch_.Exc = 0.0;
     scratch_.tr_PVxc = 0.0;
 
-    UksDensityInput din{ in.Da, in.Db, S, xc_functional_id_ };
-    UksVxcOutput dout{scratch_.Vxc_a, scratch_.Vxc_b, scratch_.Exc, scratch_.tr_PVxc};
+    if (functional_.NeedsGrid()) {
+        // geometry -> grid -> AO values happened once, at construction.  Per
+        // iteration only: density on the grid -> functional -> AO matrix.
+        const dft::DftBuildResult xc =
+            dft::build_uks_vxc(grid_, in.Da, in.Db, functional_);
 
-    vxc_functor_(din, dout);
+        scratch_.Vxc_a = xc.Vxc_a;
+        scratch_.Vxc_b = xc.Vxc_b;
+        scratch_.Exc = xc.Exc;
+        scratch_.tr_PVxc = xc.tr_PVxc;
 
-    result.Fa += scratch_.Vxc_a;
-    result.Fb += scratch_.Vxc_b;
-    result.energy_correction = scratch_.Exc - 0.5 * scratch_.tr_PVxc;
-    return result;
+        out.Fa += scratch_.Vxc_a;
+        out.Fb += scratch_.Vxc_b;
+    }
+
+    const T2 D_total = in.Da + in.Db;
+    out.electronic_energy = TraceProduct(D_total, hcore_) +
+                            0.5 * TraceProduct(D_total, scratch_.J) -
+                            0.5 * ax * (TraceProduct(in.Da, scratch_.Ka) +
+                                        TraceProduct(in.Db, scratch_.Kb)) +
+                            scratch_.Exc;
 }

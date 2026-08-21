@@ -1,0 +1,10 @@
+build/
+
+/src/mp2/
+
+
+
+/tests/test_mp2.cpp
+
+# build artifacts
+/dmqc

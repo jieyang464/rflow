@@ -24,6 +24,15 @@ public:
     explicit Libint2IntegralProvider(const Molecule& molecule,
                                      std::vector<std::string> basis_by_atom = {},
                                      IntegralBuildOptions options = {});
+
+    // Build on an explicitly supplied basis instead of looking one up by name.
+    // Needed whenever the basis is not in the library -- for instance Szabo's
+    // HeH+ example, whose zeta_He = 2.0925 differs from the tabulated STO-3G
+    // value of 1.690 -- and later for RI auxiliary bases.
+    Libint2IntegralProvider(const Molecule& molecule,
+                            BasisShells explicit_basis,
+                            IntegralBuildOptions options = {});
+
     ~Libint2IntegralProvider();
 
     Libint2IntegralProvider(const Libint2IntegralProvider&);
