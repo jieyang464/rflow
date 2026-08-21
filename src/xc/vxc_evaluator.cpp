@@ -2,6 +2,6 @@
 
 VxcFunctor make_stub_vxc_functor() {
   return [](const UksDensityInput&, UksVxcOutput&) {
-    // Contract: SCF zeroes the output buffers before calling the plugin.
+    // Contract: the caller zeroes the output buffers before invoking the plugin.
   };
 }
