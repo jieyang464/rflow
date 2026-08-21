@@ -1,16 +1,11 @@
-# scfcxx
+# dmqc
 
-A self-directed implementation of **density-matrix-based SCF**: an unrestricted
-Hartree–Fock and Kohn–Sham program in which the density matrix is converged by
-*rotating it* rather than by diagonalizing a Fock matrix.
-
-This is a **proof of concept**. The claim it makes good on is narrow and
+This is a **proof of concept** implementation of the **density-matrix-based SCF**.
 specific: *swapping the Fock diagonalization for a commutator-driven density
 update converges to the same density matrix.* It is not a fast program, and
 [Scope and limitations](#scope-and-limitations) says plainly what is missing.
 
 ---
-
 ## The idea
 
 The usual SCF cycle builds a Fock matrix and solves the generalized eigenvalue
@@ -68,7 +63,7 @@ exactly once, *after* convergence, and only to produce canonical orbitals for
 whatever comes next — a deliberate design point, controlled by
 `SCFSettings::finalize_orbitals`.
 
-## Main archetecture features
+## Main architecture features
 The project applies abstract base class interfaces extensively on places like
 integral (derivative) providers, density matrice updator, Fock builder effective 
 density builders to achieve a modular and maintainable design.
